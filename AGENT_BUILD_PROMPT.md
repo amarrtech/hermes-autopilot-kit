@@ -28,7 +28,7 @@ Required build steps:
 5. Configure model provider.
 6. Configure Discord or Slack gateway.
 7. Create BrainCache markdown repo.
-8. Install and configure GBrain or compatible brain index.
+8. Install and configure GBrain indexing unless the user disables it.
 9. Install starter skills.
 10. Create starter cron jobs.
 11. Add gateway watchdog.
@@ -47,9 +47,9 @@ Definition of done:
 - Hermes gateway is online.
 - Chat platform receives a test message.
 - Brain page write/read works.
+- GBrain is initialized and synced, or markdown-only fallback is clearly reported.
 - At least one receipt exists.
 - Backup repo has a commit.
 - Self-improvement scorecard exists.
 - Restart test passes.
 ```
-

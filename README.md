@@ -17,8 +17,10 @@ The installer creates:
 - persistent Hermes data directory
 - Docker Compose service using the official `nousresearch/hermes-agent:latest` image
 - markdown-first `BrainCache` repo
+- GBrain indexing when `ENABLE_GBRAIN=true`
 - receipt writer
 - gateway health check
+- brain sync job
 - weekly self-improvement scorecard
 - local cron entries for starter checks
 
@@ -74,6 +76,27 @@ Users still need to create or provide:
 - optional Cloudflare, X, Google, or Stripe credentials
 
 Everything after credential collection should be handled by the installer or by an AI agent using `AGENT_BUILD_PROMPT.md`.
+
+## GBrain Behavior
+
+GBrain is default-on.
+
+The installer tries to:
+
+1. install Bun
+2. install `gbrain`
+3. run `gbrain init --pglite`
+4. sync `BrainCache` markdown into GBrain
+5. add a 5-minute brain sync cron
+6. run `gbrain doctor`
+
+If any GBrain step fails, Hermes Autopilot still works in markdown-only mode. The markdown brain is the source of truth; GBrain is the searchable index that can be repaired or rebuilt later.
+
+Disable GBrain during install by answering:
+
+```text
+Install GBrain indexing? false
+```
 
 ## Target Architecture
 
@@ -140,7 +163,7 @@ Create these recurring jobs:
 | Job | Frequency | Agent? | Output |
 |---|---:|---:|---|
 | Gateway health check | every 15 min | no | alert only if down |
-| Brain sync | every 5 min | no | sync log |
+| Brain sync | every 5 min | no | GBrain sync log |
 | Daily signal memo | daily | yes | brain page + chat summary |
 | Weekly self-improvement | weekly | yes | scorecard |
 | Weekly contradiction scan | weekly | no or yes | contradiction report |

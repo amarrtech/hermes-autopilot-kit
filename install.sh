@@ -9,6 +9,8 @@ RECEIPT_DIR="$BRAIN_DIR/receipts"
 BIN_DIR="$INSTALL_DIR/bin"
 COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml"
 ENV_FILE="$INSTALL_DIR/.env"
+BUN_BIN="$HOME/.bun/bin/bun"
+GBRAIN_BIN="$HOME/.bun/bin/gbrain"
 
 say() { printf '\n==> %s\n' "$*"; }
 warn() { printf '\nWARN: %s\n' "$*" >&2; }
@@ -69,7 +71,7 @@ docker_compose() {
 
 write_env() {
   say "Collecting minimal configuration"
-  local channel model_provider model_name discord_token slack_token github_repo github_token
+  local channel model_provider model_name discord_token slack_token github_repo github_token enable_gbrain
   channel="$(prompt "Chat platform: discord or slack" "discord")"
   model_provider="$(prompt "Model provider label" "openai")"
   model_name="$(prompt "Default model name" "gpt-5.5")"
@@ -84,6 +86,7 @@ write_env() {
   fi
   github_repo="$(prompt "GitHub backup repo URL (optional)" "")"
   github_token="$(prompt_secret "GitHub token for backup pushes")"
+  enable_gbrain="$(prompt "Install GBrain indexing? true or false" "true")"
 
   umask 077
   cat > "$ENV_FILE" <<EOF
@@ -97,6 +100,7 @@ GITHUB_BACKUP_REPO=$github_repo
 GITHUB_TOKEN=$github_token
 HERMES_DATA_PATH=$DATA_DIR
 BRAIN_REPO_PATH=$BRAIN_DIR
+ENABLE_GBRAIN=$enable_gbrain
 EOF
 }
 
@@ -167,6 +171,28 @@ else
 fi
 EOF
 
+  cat > "$BIN_DIR/brain-sync" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+compose_dir="${HERMES_AUTOPILOT_HOME:-$HOME/.hermes-autopilot}"
+brain="${BRAIN_REPO_PATH:-$compose_dir/brain}"
+gbrain="${GBRAIN_BIN:-$HOME/.bun/bin/gbrain}"
+export HOME="${HOME:-$(cd ~ && pwd)}"
+export GBRAIN_HOME="${GBRAIN_HOME:-$compose_dir/gbrain}"
+export GBRAIN_SKILLS_DIR="${GBRAIN_SKILLS_DIR:-$compose_dir/skills}"
+if [ ! -x "$gbrain" ]; then
+  "$compose_dir/bin/write-receipt" brain-sync partial >/dev/null
+  echo "gbrain not installed; markdown brain still available"
+  exit 0
+fi
+if "$gbrain" sync --repo "$brain" --skip-failed; then
+  "$compose_dir/bin/write-receipt" brain-sync ok >/dev/null
+else
+  "$compose_dir/bin/write-receipt" brain-sync failed >/dev/null
+  exit 1
+fi
+EOF
+
   cat > "$BIN_DIR/weekly-scorecard" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -201,7 +227,7 @@ EOF2
 echo "$file"
 EOF
 
-  chmod +x "$BIN_DIR/write-receipt" "$BIN_DIR/gateway-health" "$BIN_DIR/weekly-scorecard"
+  chmod +x "$BIN_DIR/write-receipt" "$BIN_DIR/gateway-health" "$BIN_DIR/brain-sync" "$BIN_DIR/weekly-scorecard"
 }
 
 init_brain_repo() {
@@ -235,10 +261,71 @@ install_cron() {
   crontab -l 2>/dev/null | grep -v "hermes-autopilot" > "$tmp" || true
   cat >> "$tmp" <<EOF
 */15 * * * * HERMES_AUTOPILOT_HOME="$INSTALL_DIR" BRAIN_REPO_PATH="$BRAIN_DIR" "$BIN_DIR/gateway-health" >> "$INSTALL_DIR/gateway-health.log" 2>&1 # hermes-autopilot
+*/5 * * * * HERMES_AUTOPILOT_HOME="$INSTALL_DIR" BRAIN_REPO_PATH="$BRAIN_DIR" "$BIN_DIR/brain-sync" >> "$INSTALL_DIR/brain-sync.log" 2>&1 # hermes-autopilot
 10 8 * * 0 HERMES_AUTOPILOT_HOME="$INSTALL_DIR" BRAIN_REPO_PATH="$BRAIN_DIR" "$BIN_DIR/weekly-scorecard" >> "$INSTALL_DIR/weekly-scorecard.log" 2>&1 # hermes-autopilot
 EOF
   crontab "$tmp"
   rm -f "$tmp"
+}
+
+env_value() {
+  local key="$1"
+  if [ -f "$ENV_FILE" ]; then
+    grep -E "^${key}=" "$ENV_FILE" | tail -1 | cut -d= -f2- || true
+  fi
+}
+
+install_bun() {
+  if [ -x "$BUN_BIN" ]; then
+    return 0
+  fi
+  if ! need_cmd curl; then
+    warn "curl missing; skipping Bun/GBrain install."
+    return 1
+  fi
+  say "Installing Bun for GBrain"
+  curl -fsSL https://bun.sh/install | bash
+  [ -x "$BUN_BIN" ] || return 1
+}
+
+install_gbrain() {
+  local enable
+  enable="$(env_value ENABLE_GBRAIN)"
+  if [ "${enable:-true}" != "true" ]; then
+    say "GBrain disabled by ENABLE_GBRAIN=$enable"
+    return 0
+  fi
+
+  say "Installing GBrain indexing"
+  if ! install_bun; then
+    warn "Bun install failed; continuing with markdown-only BrainCache."
+    "$BIN_DIR/write-receipt" gbrain-install partial >/dev/null || true
+    return 0
+  fi
+
+  export PATH="$HOME/.bun/bin:$PATH"
+  export GBRAIN_HOME="$INSTALL_DIR/gbrain"
+  export GBRAIN_SKILLS_DIR="$INSTALL_DIR/skills"
+  mkdir -p "$GBRAIN_HOME" "$GBRAIN_SKILLS_DIR"
+
+  if [ ! -x "$GBRAIN_BIN" ]; then
+    if ! "$BUN_BIN" add -g github:garrytan/gbrain; then
+      warn "GBrain install failed; continuing with markdown-only BrainCache."
+      "$BIN_DIR/write-receipt" gbrain-install partial >/dev/null || true
+      return 0
+    fi
+  fi
+
+  if [ ! -d "$GBRAIN_HOME/.gbrain" ]; then
+    if ! "$GBRAIN_BIN" init --pglite; then
+      warn "GBrain init failed; continuing with markdown-only BrainCache."
+      "$BIN_DIR/write-receipt" gbrain-init partial >/dev/null || true
+      return 0
+    fi
+  fi
+
+  "$BIN_DIR/brain-sync" || warn "Initial GBrain sync failed; cron will retry."
+  "$GBRAIN_BIN" doctor || warn "GBrain doctor reported warnings."
 }
 
 print_next_steps() {
@@ -263,6 +350,7 @@ Next:
 
    docker exec -it hermes-autopilot hermes doctor
    docker exec -it hermes-autopilot hermes gateway status
+   "$BIN_DIR/brain-sync"
    "$BIN_DIR/gateway-health"
    "$BIN_DIR/weekly-scorecard"
 
@@ -288,6 +376,7 @@ main() {
   write_compose
   write_scripts
   init_brain_repo
+  install_gbrain
   install_cron
   say "Pulling Hermes image"
   docker pull nousresearch/hermes-agent:latest
