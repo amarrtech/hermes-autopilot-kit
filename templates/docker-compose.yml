@@ -1,0 +1,14 @@
+services:
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    container_name: hermes-autopilot
+    restart: unless-stopped
+    command: gateway run
+    ports:
+      - "8642:8642"
+      - "9119:9119"
+    volumes:
+      - "${HERMES_DATA_PATH:-./data}:/opt/data"
+    environment:
+      - HERMES_DASHBOARD=1
+

@@ -1,8 +1,34 @@
 # Hermes Autopilot Kit
 
-Free, open-source playbook for building a self-improving Hermes agent from scratch.
+Free, open-source playbook and one-command installer for building a self-improving Hermes agent from scratch.
 
-Use this when you want an AI agent to set up Hermes for a non-technical user with almost no manual steps.
+Use this when you want Hermes running with a private brain, receipts, starter jobs, and a self-improvement loop without hand-building the stack.
+
+## One-Command Start
+
+Run this on a VPS or local machine with shell access:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/amarrtech/hermes-autopilot-kit/main/install.sh | bash
+```
+
+The installer creates:
+
+- persistent Hermes data directory
+- Docker Compose service using the official `nousresearch/hermes-agent:latest` image
+- markdown-first `BrainCache` repo
+- receipt writer
+- gateway health check
+- weekly self-improvement scorecard
+- local cron entries for starter checks
+
+Then it prints the exact command to finish Hermes provider and gateway setup:
+
+```bash
+docker run -it --rm -v "$HOME/.hermes-autopilot/data:/opt/data" nousresearch/hermes-agent setup
+```
+
+On a fresh install, the script launches this setup wizard automatically before starting the gateway. You only rerun it later if you want to change provider, model, or chat gateway settings.
 
 ## Promise
 
@@ -21,7 +47,7 @@ The user should only provide credentials. The AI agent should do the rest.
 
 Minimum:
 
-- VPS or local machine access
+- VPS or local machine shell access
 - Discord bot token or Slack app token
 - model provider key or login method
 - GitHub repo for backups
@@ -35,6 +61,19 @@ Optional:
 - Stripe key for spend/watch workflows
 
 Never ask the user to edit Docker files, cron files, or YAML by hand.
+
+## What Is Still Manual
+
+The installer cannot create third-party accounts for you.
+
+Users still need to create or provide:
+
+- Discord or Slack app/token
+- model provider auth
+- GitHub backup repo/token
+- optional Cloudflare, X, Google, or Stripe credentials
+
+Everything after credential collection should be handled by the installer or by an AI agent using `AGENT_BUILD_PROMPT.md`.
 
 ## Target Architecture
 
@@ -176,7 +215,9 @@ backup_status: ok
 
 ## One-Click Product Shape
 
-For a real hosted version, expose this flow:
+The current open-source version is one-command, not hosted one-click.
+
+For a hosted version, expose this flow:
 
 1. User clicks **Deploy Autopilot**.
 2. User connects Discord or Slack.
@@ -185,10 +226,10 @@ For a real hosted version, expose this flow:
 5. System provisions Hermes, GBrain, skills, and jobs.
 6. User gets a message: `Autopilot is live. First health check passed.`
 
-The implementation can begin as a single installer:
+The open-source installer is:
 
 ```bash
-curl -fsSL https://example.com/hermes-autopilot/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/amarrtech/hermes-autopilot-kit/main/install.sh | bash
 ```
 
 The installer should ask only for credentials and confirmations.
@@ -233,4 +274,3 @@ Everything else can be a later module.
 ## License
 
 MIT. Use, modify, sell hosted services, and share freely.
-
